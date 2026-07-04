@@ -126,7 +126,7 @@
   .m-body .m-eyebrow{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--gold)}
   .m-price{font-family:'Cormorant Garamond',serif;font-size:26px;font-weight:600;color:var(--gold);white-space:nowrap;text-align:right}
   .m-price small{display:block;font-family:'Inter';font-size:10px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
-  .m-desc{color:var(--ink);font-size:13.5px;margin:12px 0 4px;opacity:.92}
+  .m-desc{color:var(--ink);font-size:13.5px;margin:12px 0 4px;opacity:.92;line-height:1.65}
   .m-sizes-lbl{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:18px 0 10px}
   .sizes{display:flex;flex-wrap:wrap;gap:8px}
   .size{padding:10px 16px;border:1px solid var(--line);background:var(--surface);border-radius:12px;font-size:13.5px;font-weight:500;color:var(--ink);transition:.15s}
@@ -201,7 +201,6 @@
   <img class="foot-logo" id="logoFoot" alt="Logo" />
   <div class="fname" id="footName">FRAGANCIAS URBANAS</div>
   <div class="socials" id="socialsFoot"></div>
-  <p class="adm"><a href="admin.html">Administrar catálogo</a></p>
 </footer>
 
 <div class="overlay" id="overlay"></div>
@@ -248,7 +247,7 @@ document.getElementById('socialsFoot').innerHTML=socialHTML();
 document.title=CONFIG.TIENDA_NOMBRE+" · Catálogo";
 
 let PRODUCTS=[], cart=JSON.parse(localStorage.getItem('cart_'+CONFIG.TIENDA_NOMBRE)||'[]');
-let fCat='todos', fGen='todos', q='';
+let fCat='todos', fGen='todos', fMom='todos', q='';
 const noimg='<div class="noimg"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 2h6l1 3h-8zM7 5h10v3H7zM8 8h8l1 12a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1z"/></svg></div>';
 
 function presActivas(p){
@@ -266,25 +265,32 @@ async function load(){
 function buildFilters(){
   const cats=[...new Set(PRODUCTS.map(p=>p.categoria).filter(Boolean))];
   const gens=[...new Set(PRODUCTS.map(p=>p.genero).filter(Boolean))];
+  const moms=[...new Set(PRODUCTS.map(p=>p.momento).filter(Boolean))];
   const cf=document.getElementById('catFilters'); cf.innerHTML='';
   cf.appendChild(makeChip('Todos','todos',()=>{fCat='todos';render()}));
   cats.forEach(c=>cf.appendChild(makeChip(c,c,()=>{fCat=c;render()})));
   const gf=document.getElementById('genFilters'); gf.querySelectorAll('.chip').forEach(e=>e.remove());
-  const sep=gf.querySelector('.sep'); if(gens.length) sep.style.display='block';
-  gens.forEach(g=>{ const c=makeChip(g,g,()=>{fGen=(fGen===g?'todos':g);render()}); gf.insertBefore(c,sep.nextSibling); });
+  const sep=gf.querySelector('.sep'); const sort=gf.querySelector('.sort');
+  if(gens.length||moms.length) sep.style.display='block';
+  gens.forEach(g=>{ const c=makeChip(g,g,()=>{fGen=(fGen===g?'todos':g);render()},'gen'); gf.insertBefore(c,sort); });
+  moms.forEach(m=>{ const c=makeChip(m,m,()=>{fMom=(fMom===m?'todos':m);render()},'mom'); gf.insertBefore(c,sort); });
 }
-function makeChip(label,val,onClick){ const b=document.createElement('button'); b.className='chip'; b.textContent=label; b.dataset.v=val; b.onclick=()=>{onClick();syncChips();}; return b; }
+function makeChip(label,val,onClick,dim){ const b=document.createElement('button'); b.className='chip'; b.textContent=label; b.dataset.v=val; if(dim) b.dataset.dim=dim; b.onclick=()=>{onClick();syncChips();}; return b; }
 function syncChips(){
   document.querySelectorAll('#catFilters .chip').forEach(c=>c.classList.toggle('on',c.dataset.v===fCat));
-  document.querySelectorAll('#genFilters .chip').forEach(c=>c.classList.toggle('on',c.dataset.v===fGen));
+  document.querySelectorAll('#genFilters .chip').forEach(c=>{
+    const on=c.dataset.dim==='mom'?(c.dataset.v===fMom):(c.dataset.v===fGen);
+    c.classList.toggle('on',on);
+  });
 }
 
 function filtered(){
   let list=PRODUCTS.filter(p=>{
     const okCat=fCat==='todos'||p.categoria===fCat;
     const okGen=fGen==='todos'||p.genero===fGen;
+    const okMom=fMom==='todos'||p.momento===fMom;
     const okQ=!q||(p.nombre+' '+(p.marca||'')+' '+(p.descripcion||'')).toLowerCase().includes(q);
-    return okCat&&okGen&&okQ;
+    return okCat&&okGen&&okMom&&okQ;
   });
   const s=document.getElementById('sort').value;
   const desde=p=>{ const a=presActivas(p); return a.length?Number(a[0].precio):0; };
@@ -315,10 +321,11 @@ function render(){
       <div class="card-body">
         <span class="eyebrow">${esc(p.marca||'')}</span>
         <h3>${esc(p.nombre)}</h3>
-        <p class="desc">${esc(p.descripcion||'')}</p>
+        <p class="desc">${fmtLines(p.descripcion)[0]||''}</p>
         <div class="meta">
           ${p.categoria?`<span class="tag">${esc(p.categoria)}</span>`:''}
           ${p.genero?`<span class="tag">${esc(p.genero)}</span>`:''}
+          ${p.momento?`<span class="tag">${esc(p.momento)}</span>`:''}
         </div>
         <div class="row">
           <div><span class="from-lbl">${varias?'Desde':'&nbsp;'}</span><div class="price">${money(desde.precio)}</div></div>
@@ -330,6 +337,14 @@ function render(){
 }
 function setState(html){ document.getElementById('stateBox').innerHTML=html?`<div class="state">${html}</div>`:''; }
 function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+// separa la descripción en líneas: por saltos de línea o por " - " (guion entre espacios)
+function fmtLines(s){
+  return esc(s||'')
+    .split(/\r?\n|\s+[-–—]\s+/)
+    .map(x=>x.replace(/^[-–—]\s*/,'').trim())
+    .filter(Boolean);
+}
+function fmtDesc(s){ return fmtLines(s).join('<br>'); }
 
 let modalProd=null, modalSel=0;
 function openModal(id){
@@ -337,7 +352,7 @@ function openModal(id){
   modalProd=p; modalSel=0;
   const activas=presActivas(p);
   const img=p.imagen_url?`<img src="${p.imagen_url}" alt="${esc(p.nombre)}">`:noimg;
-  const tags=[p.categoria,p.genero].filter(Boolean).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
+  const tags=[p.categoria,p.genero,p.momento].filter(Boolean).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
   const sizes=activas.map((pr,i)=>`<button class="size ${i===0?'on':''}" data-i="${i}" onclick="selectSize(${i})">${esc(pr.tamano)} — ${money(pr.precio)}</button>`).join('');
   document.getElementById('modalBox').innerHTML=`
     <div class="m-hero">
@@ -350,7 +365,7 @@ function openModal(id){
         <div><div class="m-eyebrow">${esc(p.marca||'')}</div><h2>${esc(p.nombre)}</h2></div>
         <div class="m-price" id="mPrice">${money(activas[0].precio)}<small>${esc(activas[0].tamano)}</small></div>
       </div>
-      ${p.descripcion?`<p class="m-desc">${esc(p.descripcion)}</p>`:''}
+      ${p.descripcion?`<p class="m-desc">${fmtDesc(p.descripcion)}</p>`:''}
       <div class="m-sizes-lbl">Elige tu presentación</div>
       <div class="sizes">${sizes}</div>
       <div class="m-actions">

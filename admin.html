@@ -141,6 +141,9 @@
           <select id="f_gen"><option value="">—</option><option>Masculino</option><option>Femenino</option><option>Unisex</option></select>
         </div>
       </div>
+      <div class="field"><label>Momento de uso</label>
+        <select id="f_momento"><option value="">—</option><option>Diurno</option><option>Nocturno</option><option>Versátil (día/noche)</option></select>
+      </div>
 
       <div class="sec-line"></div>
       <div class="pres-title">Presentaciones y precios</div>
@@ -255,7 +258,7 @@ function renderList(){
       ${img}
       <div class="info">
         <h3>${esc(p.nombre)} ${p.destacado?'★':''}${oculto?' · <span style="color:var(--err)">oculto</span>':''}</h3>
-        <div class="sub">${esc(p.marca||'—')}${[p.categoria,p.genero].filter(Boolean).length?' · '+[p.categoria,p.genero].filter(Boolean).map(esc).join(' · '):''}</div>
+        <div class="sub">${esc(p.marca||'—')}${[p.categoria,p.genero,p.momento].filter(Boolean).length?' · '+[p.categoria,p.genero,p.momento].filter(Boolean).map(esc).join(' · '):''}</div>
         <div class="pz">${resumenPres(p)}</div>
       </div>
       <div class="acts">
@@ -300,6 +303,7 @@ $('saveBtn').onclick=async ()=>{
       descripcion:$('f_desc').value.trim()||null,
       categoria:$('f_cat').value||null,
       genero:$('f_gen').value||null,
+      momento:$('f_momento').value||null,
       presentaciones,
       precio:presentaciones[0].precio,   // compat: guardamos el menor
       stock:$('f_stock').value?parseInt($('f_stock').value):0,
@@ -326,7 +330,7 @@ function editProduct(id){
   const p=PRODUCTS.find(x=>x.id===id); if(!p) return;
   $('editId').value=p.id; $('f_nombre').value=p.nombre||''; $('f_marca').value=p.marca||'';
   $('f_desc').value=p.descripcion||''; $('f_stock').value=p.stock??'';
-  setSelect('f_cat',p.categoria); setSelect('f_gen',p.genero);
+  setSelect('f_cat',p.categoria); setSelect('f_gen',p.genero); setSelect('f_momento',p.momento);
   fillPres(p.presentaciones);
   $('f_dest').checked=!!p.destacado; $('f_visible').checked=p.visible!==false; $('f_imgurl').value=p.imagen_url||''; pendingFile=null;
   if(p.imagen_url){ $('drop').classList.add('has'); $('drop').innerHTML=`<img src="${p.imagen_url}">`; } else { resetDrop(); }
@@ -343,7 +347,7 @@ async function delProduct(id){
 $('cancelBtn').onclick=resetForm;
 function resetForm(){
   $('editId').value=''; ['f_nombre','f_marca','f_desc','f_stock','f_imgurl'].forEach(i=>$(i).value='');
-  $('f_cat').value=''; $('f_gen').value=''; $('f_dest').checked=false; $('f_visible').checked=true; pendingFile=null;
+  $('f_cat').value=''; $('f_gen').value=''; $('f_momento').value=''; $('f_dest').checked=false; $('f_visible').checked=true; pendingFile=null;
   fillPres([]); resetDrop(); $('formTitle').textContent='Nuevo producto'; $('cancelBtn').style.display='none';
 }
 function resetDrop(){ $('drop').classList.remove('has'); $('drop').innerHTML='Toca para subir una foto<br><small>JPG o PNG</small>'; $('f_img').value=''; }
