@@ -9,9 +9,16 @@ const CONFIG = {
 
   // --- Datos de la tienda ---
   TIENDA_NOMBRE: "FRAGANCIAS URBANAS",
-  TIENDA_TAGLINE: "Perfumería árabe, diseñador y nicho origen",
+  TIENDA_TAGLINE: "Perfumería árabe, diseñador y nicho · origen",
   MONEDA: "S/",
 
   // --- WhatsApp para recibir pedidos ---
   WHATSAPP: "51969287710",
+
+  // --- Redes sociales (deja "" en la que no uses) ---
+  REDES: {
+    instagram: "https://www.instagram.com/fragancias.urbanas1?utm_source=qr&igsh=ZDkwZm8waDhzZjd3",
+    facebook:  "https://www.facebook.com/share/1Hyry1LtcY/",
+    tiktok:    "https://www.tiktok.com/@fragancias.urbanas?_r=1&_t=ZS-97iHq4pd8CL",
+  },
 };
