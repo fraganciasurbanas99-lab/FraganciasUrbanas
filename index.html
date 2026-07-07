@@ -70,6 +70,13 @@
   .row{margin-top:auto;display:flex;align-items:flex-end;justify-content:space-between;gap:8px}
   .from-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;display:block}
   .price{font-family:'Cormorant Garamond',serif;font-size:25px;font-weight:600;color:var(--gold);line-height:1}
+  .promo-flag{position:absolute;top:10px;right:10px;background:var(--err);color:#fff;font-size:10px;font-weight:700;padding:4px 9px;border-radius:100px;text-transform:uppercase;letter-spacing:.04em}
+  .price-old{font-size:13px;color:var(--muted);text-decoration:line-through;margin-right:6px;font-family:'Inter';font-weight:400}
+  .size .old{text-decoration:line-through;opacity:.55;font-size:11px;margin-right:4px}
+  .m-price .price-old{font-size:15px}
+  .ci-info .p .old{text-decoration:line-through;color:var(--muted);font-size:11px;margin-right:5px}
+  .ci-promo{font-size:9.5px;font-weight:700;color:#fff;background:var(--err);padding:2px 6px;border-radius:100px;margin-left:6px;letter-spacing:.03em}
+  .promo-line{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ok);padding:5px 0}
   .view{font-size:12.5px;color:var(--gold);font-weight:600;white-space:nowrap;padding-bottom:3px}
 
   .state{max-width:1160px;margin:0 auto;padding:80px 20px;text-align:center;color:var(--muted)}
@@ -246,7 +253,7 @@ document.getElementById('socialsHero').innerHTML=socialHTML();
 document.getElementById('socialsFoot').innerHTML=socialHTML();
 document.title=CONFIG.TIENDA_NOMBRE+" · Catálogo";
 
-let PRODUCTS=[], cart=JSON.parse(localStorage.getItem('cart_'+CONFIG.TIENDA_NOMBRE)||'[]');
+let PRODUCTS=[], PROMOS=[], cart=JSON.parse(localStorage.getItem('cart_'+CONFIG.TIENDA_NOMBRE)||'[]');
 let fCat='todos', fGen='todos', fMom='todos', q='';
 const noimg='<div class="noimg"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 2h6l1 3h-8zM7 5h10v3H7zM8 8h8l1 12a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1z"/></svg></div>';
 
@@ -254,11 +261,65 @@ function presActivas(p){
   return (p.presentaciones||[]).filter(x=>x&&x.activo&&Number(x.precio)>0).sort((a,b)=>Number(a.precio)-Number(b.precio));
 }
 
+/* ---------- MOTOR DE PROMOCIONES ---------- */
+function promosActivas(){
+  const hoy=new Date().toISOString().slice(0,10);
+  return PROMOS.filter(p=>p.activo && (!p.desde||hoy>=p.desde) && (!p.hasta||hoy<=p.hasta));
+}
+function tallaOk(cfg,tamano){ return !cfg.tallas||!cfg.tallas.length||cfg.tallas.includes(tamano); }
+// precio por unidad aplicando promos de tipo "producto" y "general" (toma el mejor descuento)
+function precioUnit(prod,tamano,base){
+  let mejor=base, promo=null;
+  promosActivas().forEach(pr=>{
+    const c=pr.config||{}; let pct=0, ok=false;
+    if(pr.tipo==='producto'){ ok=(c.productos||[]).includes(prod.nombre)&&tallaOk(c,tamano); pct=c.pct||0; }
+    else if(pr.tipo==='general'){ ok=(c.alcance==='todo'||(c.alcance==='categoria'&&prod.categoria===c.categoria)); pct=c.pct||0; }
+    if(ok&&pct>0){ const np=base*(1-pct/100); if(np<mejor){ mejor=np; promo=pr.nombre; } }
+  });
+  return {precio:Math.round(mejor*100)/100, original:base, promo};
+}
+// lista de presentaciones activas con su precio efectivo (para catálogo/modal)
+function effList(p){ return presActivas(p).map(pr=>({...pr, ...precioUnit(p,pr.tamano,Number(pr.precio))})); }
+// cálculo del carrito con promos de cantidad y combo
+function computeCart(){
+  const lines=cart.map(it=>{
+    const prod=PRODUCTS.find(x=>x.id===it.id)||{nombre:it.nombre,categoria:null};
+    const base=Number(it.precio);
+    let {precio:unit,promo}=precioUnit(prod,it.tamano,base);
+    promosActivas().filter(p=>p.tipo==='cantidad').forEach(pr=>{
+      const c=pr.config||{};
+      if((c.productos||[]).includes(it.nombre)&&tallaOk(c,it.tamano)&&it.qty>=(c.min||0)){
+        let np=c.modo==='precio'?(+c.valor||0):base*(1-(+c.valor||0)/100);
+        np=Math.round(np*100)/100;
+        if(np<unit){ unit=np; promo=pr.nombre; }
+      }
+    });
+    return {...it,unit,unitOrig:base,promo,lineTotal:Math.round(unit*it.qty*100)/100};
+  });
+  const comboDisc=[];
+  promosActivas().filter(p=>p.tipo==='combo').forEach(pr=>{
+    const c=pr.config||{};
+    let units=[];
+    lines.forEach(l=>{ if((c.productos||[]).includes(l.nombre)&&tallaOk(c,l.tamano)){ for(let k=0;k<l.qty;k++) units.push(l.unit); } });
+    const N=+c.cantidad||0, P=+c.precio_total||0;
+    if(N>0&&units.length>=N){
+      units.sort((a,b)=>b-a); const groups=Math.floor(units.length/N); let saved=0;
+      for(let g=0;g<groups;g++){ const grp=units.slice(g*N,(g+1)*N); const normal=grp.reduce((s,x)=>s+x,0); if(P<normal) saved+=(normal-P); }
+      saved=Math.round(saved*100)/100;
+      if(saved>0) comboDisc.push({nombre:pr.nombre,monto:saved});
+    }
+  });
+  const subtotal=Math.round(lines.reduce((s,l)=>s+l.lineTotal,0)*100)/100;
+  const totalCombo=Math.round(comboDisc.reduce((s,c)=>s+c.monto,0)*100)/100;
+  return {lines,comboDisc,subtotal,total:Math.max(0,Math.round((subtotal-totalCombo)*100)/100)};
+}
+
 async function load(){
   setState('<div class="spinner"></div><span class="serif">Cargando catálogo…</span>');
   const { data, error } = await sb.from('productos').select('*');
   if(error){ setState('<span class="serif">No se pudo cargar</span>Revisa las credenciales en config.js.<br><small style="opacity:.7">'+error.message+'</small>'); return; }
   PRODUCTS=(data||[]).filter(p=>p.visible!==false && presActivas(p).length>0);
+  const rp=await sb.from('promociones').select('*'); PROMOS=rp.error?[]:(rp.data||[]);
   setState(''); buildFilters(); render();
 }
 
@@ -310,12 +371,13 @@ function render(){
   if(!list.length){ grid.innerHTML=''; setState('<span class="serif">Sin resultados</span>Prueba con otra búsqueda o filtro.'); return; }
   setState('');
   grid.innerHTML=list.map(p=>{
-    const activas=presActivas(p); const desde=activas[0]; const varias=activas.length>1;
+    const eff=effList(p); const desde=eff.reduce((m,x)=>x.precio<m.precio?x:m,eff[0]); const varias=eff.length>1;
+    const hasPromo=eff.some(x=>x.precio<x.original); const promoName=(eff.find(x=>x.promo)||{}).promo;
     const img=p.imagen_url?`<img src="${p.imagen_url}" alt="${esc(p.nombre)}" loading="lazy">`:noimg;
     return `<article class="card" onclick="openModal('${p.id}')">
       <div class="thumb">
-        <span class="badge">${activas.length} ${activas.length===1?'talla':'tallas'}</span>
-        ${p.destacado?'<span class="fav">Destacado</span>':''}
+        <span class="badge">${eff.length} ${eff.length===1?'talla':'tallas'}</span>
+        ${hasPromo?`<span class="promo-flag">${esc(promoName||'Oferta')}</span>`:(p.destacado?'<span class="fav">Destacado</span>':'')}
         ${img}
       </div>
       <div class="card-body">
@@ -328,7 +390,7 @@ function render(){
           ${p.momento?`<span class="tag">${esc(p.momento)}</span>`:''}
         </div>
         <div class="row">
-          <div><span class="from-lbl">${varias?'Desde':'&nbsp;'}</span><div class="price">${money(desde.precio)}</div></div>
+          <div><span class="from-lbl">${varias?'Desde':'&nbsp;'}</span><div class="price">${hasPromo?`<span class="price-old">${money(desde.original)}</span>`:''}${money(desde.precio)}</div></div>
           <span class="view">Ver más →</span>
         </div>
       </div>
@@ -350,10 +412,11 @@ let modalProd=null, modalSel=0;
 function openModal(id){
   const p=PRODUCTS.find(x=>x.id===id); if(!p) return;
   modalProd=p; modalSel=0;
-  const activas=presActivas(p);
+  const eff=effList(p);
   const img=p.imagen_url?`<img src="${p.imagen_url}" alt="${esc(p.nombre)}">`:noimg;
   const tags=[p.categoria,p.genero,p.momento].filter(Boolean).map(t=>`<span class="tag">${esc(t)}</span>`).join('');
-  const sizes=activas.map((pr,i)=>`<button class="size ${i===0?'on':''}" data-i="${i}" onclick="selectSize(${i})">${esc(pr.tamano)} — ${money(pr.precio)}</button>`).join('');
+  const sizes=eff.map((pr,i)=>`<button class="size ${i===0?'on':''}" data-i="${i}" onclick="selectSize(${i})">${esc(pr.tamano)} — ${pr.precio<pr.original?`<span class="old">${money(pr.original)}</span>`:''}${money(pr.precio)}</button>`).join('');
+  const p0=eff[0];
   document.getElementById('modalBox').innerHTML=`
     <div class="m-hero">
       <button class="m-close" onclick="closeModal()">×</button>
@@ -363,7 +426,7 @@ function openModal(id){
     <div class="m-body">
       <div class="m-top">
         <div><div class="m-eyebrow">${esc(p.marca||'')}</div><h2>${esc(p.nombre)}</h2></div>
-        <div class="m-price" id="mPrice">${money(activas[0].precio)}<small>${esc(activas[0].tamano)}</small></div>
+        <div class="m-price" id="mPrice">${p0.precio<p0.original?`<span class="price-old">${money(p0.original)}</span>`:''}${money(p0.precio)}<small>${esc(p0.tamano)}</small></div>
       </div>
       ${p.descripcion?`<p class="m-desc">${fmtDesc(p.descripcion)}</p>`:''}
       <div class="m-sizes-lbl">Elige tu presentación</div>
@@ -383,16 +446,17 @@ function openModal(id){
 }
 function selectSize(i){
   modalSel=i;
-  const pr=presActivas(modalProd)[i];
+  const pr=effList(modalProd)[i];
   document.querySelectorAll('.size').forEach(b=>b.classList.toggle('on',+b.dataset.i===i));
-  document.getElementById('mPrice').innerHTML=`${money(pr.precio)}<small>${esc(pr.tamano)}</small>`;
+  document.getElementById('mPrice').innerHTML=`${pr.precio<pr.original?`<span class="price-old">${money(pr.original)}</span>`:''}${money(pr.precio)}<small>${esc(pr.tamano)}</small>`;
 }
 function closeModal(){ document.getElementById('modal').classList.remove('on'); }
 document.getElementById('modal').onclick=e=>{ if(e.target.id==='modal') closeModal(); };
-function addSelected(){ const pr=presActivas(modalProd)[modalSel]; addToCart(modalProd,pr.tamano,Number(pr.precio)); closeModal(); }
+function addSelected(){ const pr=effList(modalProd)[modalSel]; addToCart(modalProd,pr.tamano,pr.original); closeModal(); }
 function waSolo(){
-  const pr=presActivas(modalProd)[modalSel];
-  const msg=`*Pedido — ${CONFIG.TIENDA_NOMBRE}*\n\n• 1× ${modalProd.nombre} (${pr.tamano}) — ${money(pr.precio)}`;
+  const pr=effList(modalProd)[modalSel];
+  const promoTxt=pr.precio<pr.original?` [${pr.promo||'Oferta'}]`:'';
+  const msg=`*Pedido — ${CONFIG.TIENDA_NOMBRE}*\n\n• 1× ${modalProd.nombre} (${pr.tamano}) — ${money(pr.precio)}${promoTxt}`;
   window.open(`https://wa.me/${CONFIG.WHATSAPP}?text=${encodeURIComponent(msg)}`,'_blank');
 }
 
@@ -405,23 +469,25 @@ function addToCart(p,tamano,precio){
 function changeQty(key,d){ const it=cart.find(x=>x.key===key); if(!it) return; it.qty+=d; if(it.qty<=0) cart=cart.filter(x=>x.key!==key); saveCart(); renderCart(); }
 function removeItem(key){ cart=cart.filter(x=>x.key!==key); saveCart(); renderCart(); }
 function renderCart(){
+  const r=computeCart();
   const n=cart.reduce((s,i)=>s+i.qty,0);
   const badge=document.getElementById('cartCount'); badge.textContent=n; badge.style.display=n?'flex':'none';
   const box=document.getElementById('cartItems'); const foot=document.getElementById('cartFoot');
   if(!cart.length){ box.innerHTML='<div class="cart-empty"><span class="serif">Tu pedido está vacío</span>Elige un perfume y su talla.</div>'; foot.style.display='none'; return; }
   foot.style.display='block';
-  box.innerHTML=cart.map(i=>{
-    const img=i.imagen_url?`<img class="ci-img" src="${i.imagen_url}" alt="">`:`<div class="ci-img">${noimg}</div>`;
+  box.innerHTML=r.lines.map(l=>{
+    const img=l.imagen_url?`<img class="ci-img" src="${l.imagen_url}" alt="">`:`<div class="ci-img">${noimg}</div>`;
+    const disc=l.unit<l.unitOrig;
     return `<div class="ci">${img}
-      <div class="ci-info"><h4>${esc(i.nombre)}</h4>
-        <div class="s">${esc(i.marca||'')}${i.tamano?' · '+esc(i.tamano):''}</div>
-        <div class="p">${money(i.precio*i.qty)}</div>
-        <button class="rm" onclick="removeItem('${i.key}')">Quitar</button>
+      <div class="ci-info"><h4>${esc(l.nombre)}</h4>
+        <div class="s">${esc(l.marca||'')}${l.tamano?' · '+esc(l.tamano):''}</div>
+        <div class="p">${disc?`<span class="old">${money(l.unitOrig*l.qty)}</span>`:''}${money(l.lineTotal)}${l.promo?`<span class="ci-promo">${esc(l.promo)}</span>`:''}</div>
+        <button class="rm" onclick="removeItem('${l.key}')">Quitar</button>
       </div>
-      <div class="qty"><button onclick="changeQty('${i.key}',-1)">−</button><span>${i.qty}</span><button onclick="changeQty('${i.key}',1)">+</button></div>
+      <div class="qty"><button onclick="changeQty('${l.key}',-1)">−</button><span>${l.qty}</span><button onclick="changeQty('${l.key}',1)">+</button></div>
     </div>`;
-  }).join('');
-  document.getElementById('cartTotal').textContent=money(cart.reduce((s,i)=>s+i.precio*i.qty,0));
+  }).join('') + (r.comboDisc.length?`<div style="padding:10px 0 2px">${r.comboDisc.map(c=>`<div class="promo-line"><span>🎁 ${esc(c.nombre)}</span><span>- ${money(c.monto)}</span></div>`).join('')}</div>`:'');
+  document.getElementById('cartTotal').textContent=money(r.total);
 }
 function openCart(){ document.getElementById('overlay').classList.add('on'); document.getElementById('drawer').classList.add('on'); }
 function closeCart(){ document.getElementById('overlay').classList.remove('on'); document.getElementById('drawer').classList.remove('on'); }
@@ -430,10 +496,12 @@ document.getElementById('closeCart').onclick=closeCart;
 document.getElementById('overlay').onclick=closeCart;
 document.getElementById('waBtn').onclick=()=>{
   if(!cart.length) return;
+  const r=computeCart();
   const nombre=document.getElementById('cName').value.trim();
   let msg=`*Nuevo pedido — ${CONFIG.TIENDA_NOMBRE}*\n\n`;
-  cart.forEach(i=>{ msg+=`• ${i.qty}× ${i.nombre} (${i.tamano}) — ${money(i.precio*i.qty)}\n`; });
-  msg+=`\n*Total: ${money(cart.reduce((s,i)=>s+i.precio*i.qty,0))}*`;
+  r.lines.forEach(l=>{ msg+=`• ${l.qty}× ${l.nombre} (${l.tamano}) — ${money(l.lineTotal)}${l.promo?' ['+l.promo+']':''}\n`; });
+  r.comboDisc.forEach(c=>{ msg+=`🎁 ${c.nombre}: - ${money(c.monto)}\n`; });
+  msg+=`\n*Total: ${money(r.total)}*`;
   if(nombre) msg+=`\n\nCliente: ${nombre}`;
   window.open(`https://wa.me/${CONFIG.WHATSAPP}?text=${encodeURIComponent(msg)}`,'_blank');
 };
