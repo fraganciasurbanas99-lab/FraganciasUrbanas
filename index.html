@@ -326,15 +326,13 @@ async function load(){
 function buildFilters(){
   const cats=[...new Set(PRODUCTS.map(p=>p.categoria).filter(Boolean))];
   const gens=[...new Set(PRODUCTS.map(p=>p.genero).filter(Boolean))];
-  const moms=[...new Set(PRODUCTS.map(p=>p.momento).filter(Boolean))];
   const cf=document.getElementById('catFilters'); cf.innerHTML='';
   cf.appendChild(makeChip('Todos','todos',()=>{fCat='todos';render()}));
   cats.forEach(c=>cf.appendChild(makeChip(c,c,()=>{fCat=c;render()})));
   const gf=document.getElementById('genFilters'); gf.querySelectorAll('.chip').forEach(e=>e.remove());
   const sep=gf.querySelector('.sep'); const sort=gf.querySelector('.sort');
-  if(gens.length||moms.length) sep.style.display='block';
+  if(gens.length) sep.style.display='block';
   gens.forEach(g=>{ const c=makeChip(g,g,()=>{fGen=(fGen===g?'todos':g);render()},'gen'); gf.insertBefore(c,sort); });
-  moms.forEach(m=>{ const c=makeChip(m,m,()=>{fMom=(fMom===m?'todos':m);render()},'mom'); gf.insertBefore(c,sort); });
 }
 function makeChip(label,val,onClick,dim){ const b=document.createElement('button'); b.className='chip'; b.textContent=label; b.dataset.v=val; if(dim) b.dataset.dim=dim; b.onclick=()=>{onClick();syncChips();}; return b; }
 function syncChips(){
